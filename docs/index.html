@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Follow the white rabbit...</title>
+  <style>
+    :root { color-scheme: dark; }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      touch-action: none;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+    }
+
+    #matrix {
+      position: fixed;
+      inset: 0;
+      display: block;
+      width: 100vw;
+      width: 100dvw;
+      height: 100vh;
+      height: 100dvh;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="matrix"></canvas>
+  <script>
+    const canvas = document.getElementById('matrix');
+    const context = canvas.getContext('2d', { alpha: false });
+    const japaneseGlyphs = ('ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ').split('');
+    const otherGlyphs = ('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:+-=<>*¦|/\\').split('');
+    const fontStack = '"MS Gothic", "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", monospace';
+
+    let width = 0;
+    let height = 0;
+    let dpr = 1;
+    let fontSize = 18;
+    let rowHeight = 20;
+    let columns = 0;
+    let rows = 0;
+    let streams = [];
+    let previousTime = 0;
+
+    function randomGlyph() {
+      const pool = Math.random() < 0.7 ? japaneseGlyphs : otherGlyphs;
+      return pool[(Math.random() * pool.length) | 0];
+    }
+
+    function createStream(column, seeded = false) {
+      const length = 18 + ((Math.random() * 26) | 0);
+      const start = seeded ? Math.random() * rows * 1.5 - rows * 1.5 : -Math.random() * 20;
+
+      return {
+        column,
+        head: start,
+        lastRow: Math.floor(start),
+        speed: 4 + Math.random() * 7,
+        length,
+        brightness: 0.75 + Math.random() * 0.45,
+        chars: Array.from({ length }, randomGlyph),
+      };
+    }
+
+    function advanceStream(stream) {
+      stream.chars.unshift(randomGlyph());
+      stream.chars.length = stream.length;
+
+      for (let i = 1; i < stream.length; i += 1) {
+        if (Math.random() < 0.038 + i * 0.0007) {
+          stream.chars[i] = randomGlyph();
+        }
+      }
+    }
+
+    function resetCanvas() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      fontSize = Math.max(16, Math.min(24, width / 72));
+      rowHeight = fontSize * 1.16;
+      columns = Math.ceil(width / fontSize);
+      rows = Math.ceil(height / rowHeight);
+
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      context.textBaseline = 'top';
+      context.textAlign = 'left';
+      context.font = fontSize + 'px ' + fontStack;
+      context.fillStyle = '#000';
+      context.fillRect(0, 0, width, height);
+
+      streams = Array.from({ length: columns }, (_, column) => createStream(column, true));
+    }
+
+    function draw(time) {
+      if (!previousTime) {
+        previousTime = time;
+      }
+
+      const delta = Math.min(0.05, (time - previousTime) / 1000 || 0.016);
+      previousTime = time;
+
+      context.save();
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      context.shadowBlur = 0;
+      context.shadowColor = 'transparent';
+      context.fillStyle = 'rgba(0, 0, 0, 0.18)';
+      context.fillRect(0, 0, width, height);
+      context.restore();
+
+      context.font = fontSize + 'px ' + fontStack;
+
+      for (let i = 0; i < streams.length; i += 1) {
+        const stream = streams[i];
+        stream.head += stream.speed * delta;
+        const headRow = Math.floor(stream.head);
+
+        while (stream.lastRow < headRow) {
+          advanceStream(stream);
+          stream.lastRow += 1;
+        }
+
+        if (stream.head - stream.length > rows + 6) {
+          streams[i] = createStream(stream.column, false);
+          continue;
+        }
+
+        const x = stream.column * fontSize;
+
+        for (let tail = 0; tail < stream.length; tail += 1) {
+          const row = headRow - tail;
+          if (row < -1 || row > rows + 1) {
+            continue;
+          }
+
+          const y = row * rowHeight;
+          const fade = 1 - tail / stream.length;
+          const alpha = Math.max(0, Math.pow(fade, 1.35) * stream.brightness);
+
+          if (tail === 0) {
+            context.shadowBlur = fontSize * 0.45;
+            context.shadowColor = 'rgba(180, 255, 220, 0.9)';
+            context.fillStyle = 'rgba(235, 255, 245, 0.98)';
+          } else if (tail < 4) {
+            context.shadowBlur = fontSize * 0.2;
+            context.shadowColor = 'rgba(90, 255, 160, 0.65)';
+            context.fillStyle = 'rgba(120, 255, 170, ' + Math.min(0.95, alpha) + ')';
+          } else {
+            context.shadowBlur = 0;
+            context.shadowColor = 'rgba(0, 255, 110, 0.22)';
+            context.fillStyle = 'rgba(0, 255, 95, ' + Math.min(0.82, alpha) + ')';
+          }
+
+          context.fillText(stream.chars[tail], x, y);
+        }
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    resetCanvas();
+    window.addEventListener('resize', resetCanvas, { passive: true });
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
